@@ -1,0 +1,25 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# 打包与测试
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+
+# 业务表格与备份文件（严格防泄漏）
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+_已同步.xlsx
+_backup_*.xlsx
+
+# 编辑器与系统文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
