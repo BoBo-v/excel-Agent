@@ -11,7 +11,17 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
-from engine import detect_excel_flavor, create_backup
+from engine import (
+    detect_excel_flavor,
+    create_backup,
+    list_sheets,
+    create_sheet,
+    rename_sheet,
+    copy_sheet,
+    delete_sheet,
+    set_sheet_visibility,
+    scan_workbook_formula_errors
+)
 from ops import run_transfer, run_fill_images, run_diff, run_filter
 
 
@@ -70,6 +80,19 @@ def main():
     p_sniff = subparsers.add_parser("sniff", help="探测表格是 WPS 还是微软 Office 格式")
     p_sniff.add_argument("--file", "-f", required=True, help="待检测的 Excel 文件路径")
 
+    # 6. sheets
+    p_sheets = subparsers.add_parser("sheets", help="工作表生命周期管理 (查看/新建/重命名/复制/删除/隐藏)")
+    p_sheets.add_argument("--file", "-f", required=True, help="Excel 文件路径")
+    p_sheets.add_argument("--action", "-a", required=True, choices=["list", "create", "rename", "copy", "delete", "hide", "unhide"], help="操作类型")
+    p_sheets.add_argument("--name", "-n", default=None, help="工作表名称")
+    p_sheets.add_argument("--new-name", default=None, help="新工作表名称 (重命名或复制时使用)")
+    p_sheets.add_argument("--output", "-o", default=None, help="另存文件路径 (默认覆写原表)")
+
+    # 7. audit
+    p_audit = subparsers.add_parser("audit", help="全表公式语法审计与错误值扫描 (#REF!, #DIV/0!, #VALUE! 等)")
+    p_audit.add_argument("--file", "-f", required=True, help="待审计的 Excel 文件路径")
+    p_audit.add_argument("--sheet", "-s", default=None, help="指定审计的工作表名称 (默认全工作簿扫描)")
+
     args = parser.parse_args()
 
     if not args.subcommand:
@@ -122,6 +145,50 @@ def main():
     elif args.subcommand == "sniff":
         flavor = detect_excel_flavor(args.file)
         print(f"表格格式探测结果: {flavor}")
+    elif args.subcommand == "sheets":
+        act = args.action
+        if act == "list":
+            s_list = list_sheets(args.file)
+            print(f"[工作表列表] 共 {len(s_list)} 个工作表:")
+            for s in s_list:
+                status_tag = f"[{s['state']}]" if s['state'] != 'visible' else ""
+                print(f"  - [{s['index']}] '{s['name']}' {status_tag} (最大行: {s['max_row']}, 最大列: {s['max_column']})")
+        elif act == "create":
+            if not args.name:
+                raise ValueError("新建工作表必须通过 --name 指定名称")
+            out = create_sheet(args.file, args.name, output_path=args.output)
+            print(f"[完成] 已新建工作表 '{args.name}' -> {out}")
+        elif act == "rename":
+            if not args.name or not args.new_name:
+                raise ValueError("重命名工作表必须指定 --name (原名称) 和 --new-name (新名称)")
+            out = rename_sheet(args.file, args.name, args.new_name, output_path=args.output)
+            print(f"[完成] 已重命名工作表 '{args.name}' -> '{args.new_name}' ({out})")
+        elif act == "copy":
+            if not args.name or not args.new_name:
+                raise ValueError("复制工作表必须指定 --name (原名称) 和 --new-name (副本名称)")
+            out = copy_sheet(args.file, args.name, args.new_name, output_path=args.output)
+            print(f"[完成] 已复制工作表 '{args.name}' -> '{args.new_name}' ({out})")
+        elif act == "delete":
+            if not args.name:
+                raise ValueError("删除工作表必须通过 --name 指定名称")
+            out = delete_sheet(args.file, args.name, output_path=args.output)
+            print(f"[完成] 已删除工作表 '{args.name}' -> {out}")
+        elif act in ("hide", "unhide"):
+            if not args.name:
+                raise ValueError("隐藏/显示工作表必须通过 --name 指定名称")
+            visible = (act == "unhide")
+            out = set_sheet_visibility(args.file, args.name, visible=visible, output_path=args.output)
+            action_desc = "取消隐藏" if visible else "隐藏"
+            print(f"[完成] 已{action_desc}工作表 '{args.name}' -> {out}")
+    elif args.subcommand == "audit":
+        errs = scan_workbook_formula_errors(args.file, target_sheet=args.sheet)
+        if not errs:
+            print("[审计结果] 未发现任何公式错误值或语法断链 (#REF!, #DIV/0!, #VALUE! 等)，表格健康！")
+        else:
+            print(f"[审计结果] 发现 {len(errs)} 处公式/计算异常:")
+            for e in errs:
+                f_info = f" | 公式: {e['formula']}" if e['formula'] else ""
+                print(f"  - [{e['sheet']}] 单元格 {e['cell']}: 错误类型 {e['error_type']}{f_info} -> {e['description']}")
 
 
 if __name__ == "__main__":

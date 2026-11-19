@@ -17,6 +17,9 @@ from engine.security import is_dangerous_formula, sanitize_plain_text, detect_pr
 from engine.header_parser import flatten_multi_level_headers, detect_header_depth
 from engine.data_cleaner import clean_numeric_value, normalize_date_value, split_text_column
 from engine.formula_builder import format_range_address, build_xlookup, build_index_match, build_sumifs, build_iferror
+from engine.sheet_manager import list_sheets, create_sheet, rename_sheet, copy_sheet, delete_sheet, set_sheet_visibility
+from engine.formula_auditor import scan_workbook_formula_errors, audit_formula_syntax
+from engine.range_detector import detect_data_boundary
 from ops.filter_op import run_filter
 
 
@@ -226,6 +229,101 @@ class TestExcelToolkit(unittest.TestCase):
         # 4. IFERROR 包裹
         f_safe = build_iferror("=VLOOKUP(A2, $B$2:$C$100, 2, FALSE)")
         self.assertEqual(f_safe, '=IFERROR(VLOOKUP(A2, $B$2:$C$100, 2, FALSE), "")')
+
+    def test_sheet_manager(self):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "原表"
+        ws["A1"] = "测试数据"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            f_path = os.path.join(tmpdir, "sheet_test.xlsx")
+            wb.save(f_path)
+
+            # 1. 列表查看
+            sheets = list_sheets(f_path)
+            self.assertEqual(len(sheets), 1)
+            self.assertEqual(sheets[0]["name"], "原表")
+
+            # 2. 新建工作表
+            create_sheet(f_path, "销售明细")
+            sheets = list_sheets(f_path)
+            self.assertEqual(len(sheets), 2)
+            self.assertIn("销售明细", [s["name"] for s in sheets])
+
+            # 3. 复制工作表
+            copy_sheet(f_path, "销售明细", "销售明细_副本")
+            sheets = list_sheets(f_path)
+            self.assertEqual(len(sheets), 3)
+
+            # 4. 重命名工作表
+            rename_sheet(f_path, "销售明细_副本", "归档表")
+            sheets = list_sheets(f_path)
+            self.assertIn("归档表", [s["name"] for s in sheets])
+            self.assertNotIn("销售明细_副本", [s["name"] for s in sheets])
+
+            # 5. 隐藏与取消隐藏
+            set_sheet_visibility(f_path, "归档表", visible=False)
+            sheets = list_sheets(f_path)
+            hidden_s = [s for s in sheets if s["name"] == "归档表"][0]
+            self.assertEqual(hidden_s["state"], "hidden")
+
+            # 6. 删除工作表
+            delete_sheet(f_path, "归档表")
+            sheets = list_sheets(f_path)
+            self.assertEqual(len(sheets), 2)
+            self.assertNotIn("归档表", [s["name"] for s in sheets])
+
+    def test_formula_auditor(self):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "错误扫描测试"
+        ws["A1"] = 100
+        ws["A2"] = "=#REF! + 50"
+        ws["A3"] = "=#DIV/0!"
+        ws["A4"] = "=SUM(B1:B10)"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            f_path = os.path.join(tmpdir, "audit_test.xlsx")
+            wb.save(f_path)
+
+            # 扫描全表公式错误
+            errors = scan_workbook_formula_errors(f_path)
+            self.assertEqual(len(errors), 2)
+            err_types = [e["error_type"] for e in errors]
+            self.assertIn("#REF!", err_types)
+            self.assertIn("#DIV/0!", err_types)
+
+        # 语法静态审计
+        res_bad_paren = audit_formula_syntax("=SUM(A1:B10")
+        self.assertFalse(res_bad_paren["valid"])
+
+        res_ref = audit_formula_syntax("=A1+#REF!")
+        self.assertFalse(res_ref["valid"])
+
+        res_ok = audit_formula_syntax("=SUM(A1:B10)")
+        self.assertTrue(res_ok["valid"])
+
+    def test_range_detector(self):
+        # 构造带大标题、副标题、空行的非标准报表矩阵
+        sample_matrix = [
+            ["公司2026年度11月份各部门预算执行情况总表", None, None, None], # 第1行: 大标题
+            ["制表部门: 财务管理部", "制表人: 李四", "导出日期: 2026-11-19", None], # 第2行: 说明
+            [None, None, None, None], # 第3行: 空行
+            ["部门编号", "部门名称", "预算金额", "实际支出"], # 第4行: 真实主表头！
+            ["D01", "研发部", 50000, 48200], # 第5行: 明细
+            ["D02", "市场部", 30000, 31500], # 第6行: 明细
+            ["D03", "运营部", 20000, 19000], # 第7行: 明细
+            [None, None, None, None], # 第8行: 底部空行
+            ["注：以上预算已包含各项税费专项补贴", None, None, None] # 第9行: 底部脚注
+        ]
+
+        bounds = detect_data_boundary(sample_matrix)
+        self.assertEqual(bounds["header_row"], 4) # 识别到第4行为主表头
+        self.assertEqual(bounds["data_start_row"], 5) # 明细从第5行起算
+        self.assertEqual(bounds["data_end_row"], 7) # 明细到第7行结束
+        self.assertEqual(bounds["start_col"], 1) # 起始第1列
+        self.assertEqual(bounds["end_col"], 4) # 结束第4列
 
 
 if __name__ == '__main__':

@@ -11,3 +11,6 @@ from .security import is_dangerous_formula, sanitize_plain_text, detect_prompt_i
 from .header_parser import flatten_multi_level_headers, detect_header_depth
 from .data_cleaner import clean_numeric_value, normalize_date_value, split_text_column
 from .formula_builder import format_range_address, build_xlookup, build_index_match, build_sumifs, build_iferror
+from .sheet_manager import list_sheets, create_sheet, rename_sheet, copy_sheet, delete_sheet, set_sheet_visibility
+from .formula_auditor import scan_workbook_formula_errors, audit_formula_syntax
+from .range_detector import detect_data_boundary

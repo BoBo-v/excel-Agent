@@ -34,6 +34,12 @@
   - 文本精准分列：支持逗号、分号等多分隔符的中英文自适应文本分列清洗。
 - ⚡ **原生联动公式构建器 (`formula_builder`)**：
   - 自动构建带绝对/相对引用锁定的原生 `=XLOOKUP(...)`、全版本通用的 `=INDEX(MATCH(...))`、多条件 `=SUMIFS(...)` 与 `=IFERROR(...)` 容错包裹，杜绝填入硬编码死数据。
+- 📑 **工作表全量生命周期管理 (`sheets`)**：
+  - 支持工作表的基础管理操作：查看列表（包含行数列数及隐藏态）、新建、复制、安全重命名、删除（防误删唯一表）以及隐藏/取消隐藏。
+- 🩺 **公式语法与错误值深度审计 (`audit`)**：
+  - 全表扫描定位包含 `#REF!`、`#DIV/0!`、`#VALUE!`、`#NAME?`、`#N/A`、`#SPILL!` 等断链与计算异常的单元格，输出错误坐标与修复建议。
+- 🎯 **复杂表真实数据区边界探测 (`range_detector`)**：
+  - 智能跳过表头前的大标题、制表人等冒号元数据说明行及空白行，精准框定核心矩形明细区的主表头行、起始行与终止行。
 - 🔍 **表格类型智能嗅探 (`sniff`)**：
   - 自动识别工作簿采用的是 WPS DISPIMG、微软 RichData、标准 Drawings 还是纯数据。
 - 🛡️ **安全 I/O 与冲突保护**：
@@ -61,7 +67,10 @@ excel-Agent/
 │   │   ├── security.py            # 公式注入与 Prompt 注入安全防护
 │   │   ├── header_parser.py       # 多级复合表头解析与扁平化
 │   │   ├── data_cleaner.py        # 假数字/混杂日期规范化与分列
-│   │   └── formula_builder.py     # 原生 XLOOKUP/SUMIFS 联动公式构建器
+│   │   ├── formula_builder.py     # 原生 XLOOKUP/SUMIFS 联动公式构建器
+│   │   ├── sheet_manager.py       # 工作表全量生命周期管理
+│   │   ├── formula_auditor.py     # 全表公式语法审计与错误值扫描
+│   │   └── range_detector.py      # 复杂非标表数据边界定位器
 │   └── ops/                       # 核心业务算子
 │       ├── fill_images_op.py      # 补图算子
 │       ├── filter_op.py           # 零损过滤算子 (含小计行保护)
@@ -132,6 +141,26 @@ python scripts/cli.py diff \
 #### ⑤ 表格类型嗅探 (`sniff`)
 ```bash
 python scripts/cli.py sniff --file "path/to/table.xlsx"
+```
+
+#### ⑥ 工作表生命周期管理 (`sheets`)
+```bash
+# 查看所有工作表清单与状态
+python scripts/cli.py sheets --file "path/to/table.xlsx" --action list
+
+# 新建或复制工作表
+python scripts/cli.py sheets --file "path/to/table.xlsx" --action create --name "2026预算"
+python scripts/cli.py sheets --file "path/to/table.xlsx" --action copy --name "2026预算" --new-name "2026预算_备份"
+
+# 重命名或隐藏工作表
+python scripts/cli.py sheets --file "path/to/table.xlsx" --action rename --name "Sheet1" --new-name "明细总表"
+python scripts/cli.py sheets --file "path/to/table.xlsx" --action hide --name "敏感成本"
+```
+
+#### ⑦ 全表公式错误与断链审计 (`audit`)
+扫描全表 `#REF!`、`#DIV/0!`、`#VALUE!`、`#NAME?` 等计算异常：
+```bash
+python scripts/cli.py audit --file "path/to/table.xlsx"
 ```
 
 ---
