@@ -60,6 +60,8 @@ def main():
     p_filter.add_argument("--op", default=">=", choices=[">=", "<=", ">", "<", "==", "!=", "contains", "not_contains"], help="比较操作符")
     p_filter.add_argument("--val", "-v", default=None, help="比较阈值或目标字符串 (如: 0.15)")
     p_filter.add_argument("--keep-empty", action="store_true", help="是否保留目标单元格为空的行 (默认剔除空值)")
+    p_filter.add_argument("--preserve-summary", action="store_true", default=True, help="智能识别并保护表格末尾的合计/小计行 (默认开启)")
+    p_filter.add_argument("--no-preserve-summary", dest="preserve_summary", action="store_false", help="关闭合计行保护，全量按条件过滤")
     p_filter.add_argument("--sheet", default=None, help="工作表名称 (默认第 1 个工作表)")
     p_filter.add_argument("--output", "-o", default=None, help="输出文件路径 (默认安全另存/覆盖并备份)")
     p_filter.add_argument("--no-backup", action="store_true", help="不生成备份文件")
@@ -112,6 +114,7 @@ def main():
             val=args.val,
             expr=args.expr,
             keep_empty=args.keep_empty,
+            preserve_summary=args.preserve_summary,
             sheet=args.sheet,
             output_path=args.output,
             no_backup=args.no_backup

@@ -18,6 +18,14 @@
   - **右侧公式自适应偏移**：插入新列时自动修正受影响的右侧公式（如 `(L2-N2)/L2` 自动平移为 `(M2-O2)/M2`）。
 - 📊 **表格差异对比与核对 (`diff`)**：
   - 比对新旧两期产品目录，输出价格变更、下架明细差异报告。
+- 📌 **表结构感知与合计行保护 (`summary_detector`)**：
+  - 智能识别表尾/表中的“合计、小计、Total、Average”等汇总行。
+  - 过滤与清洗时自动置于表尾保护，彻底杜绝明细过滤时合计行被误删、或重复计入导致统计翻倍（+161% 业务事故）。
+- 📐 **自适应列宽排版计算 (`layout_utils`)**：
+  - 精确计算中英文混排视觉宽度（全角 2.0，半角 1.0），预留过滤图标与边框间距，根治 Excel 渲染出的 `###` 及表头文字截断。
+- 🔒 **公式注入与提示词越狱拦截 (`security`)**：
+  - 拦截包含 `WEBSERVICE`、`DDE`、`EXEC` 等高危外部调用函数，避免数据外带泄漏。
+  - 对以 `=`, `+`, `-`, `@` 开头的非数字文本进行安全脱敏（CWE-1236 防护），并能探测单元格中的恶意 Prompt 越狱语句。
 - 🔍 **表格类型智能嗅探 (`sniff`)**：
   - 自动识别工作簿采用的是 WPS DISPIMG、微软 RichData、标准 Drawings 还是纯数据。
 - 🛡️ **安全 I/O 与冲突保护**：
@@ -39,14 +47,17 @@ excel-Agent/
 │   │   ├── wps_engine.py          # WPS DISPIMG 处理引擎
 │   │   ├── xml_patcher.py         # 流式 XML 补丁器
 │   │   ├── safe_io.py             # 原子性文件 I/O 与防锁备份
-│   │   └── sniffer.py             # Excel 表格类型探测
+│   │   ├── sniffer.py             # Excel 表格类型探测
+│   │   ├── summary_detector.py    # 汇总行/小计行特征识别引擎
+│   │   ├── layout_utils.py        # 排版显示宽度与自适应列宽
+│   │   └── security.py            # 公式注入与 Prompt 注入安全防护
 │   └── ops/                       # 核心业务算子
 │       ├── fill_images_op.py      # 补图算子
-│       ├── filter_op.py           # 零损过滤算子
+│       ├── filter_op.py           # 零损过滤算子 (含小计行保护)
 │       ├── transfer_op.py         # 状态与字段迁移算子
 │       └── diff_op.py             # 双表比对算子
 ├── tests/
-│   └── test_toolkit.py            # 单元测试
+│   └── test_toolkit.py            # 单元测试与端到端回归用例
 ├── SKILL.md                       # AI Agent Skill 规则规范定义
 ├── requirements.txt               # Python 依赖
 ├── .gitignore                     # Git 忽略配置

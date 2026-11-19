@@ -20,16 +20,17 @@ This skill provides a high-performance, lossless, dual-engine CLI and Python lib
 ### 1. Lossless Row Filtering (`filter`)
 Use when filtering rows based on condition (e.g. `毛利率 >= 15%`, `京东价格 < 50`, `品牌 == 半亩花田`).
 Guarantees **100% zero image loss** (Office RichData, WPS cellimages, and drawings) and executes on 100MB+ workbooks in ~3-5 seconds.
+**Summary Row Protection**: Automatically detects and protects summary/subtotal rows (e.g. `合计`, `小计`, `Total`) from being dropped or distorted.
 
 ```powershell
-# Filter by expression (strictly >= 15%)
-python "C:\Users\q1894\.gemini\config\skills\wps-excel-toolkit\scripts\cli.py" filter `
+# Filter by expression with automatic summary row protection (default)
+python scripts/cli.py filter `
     --file "path/to/table.xlsx" `
     --expr "毛利率 >= 15%" `
     --output "path/to/output.xlsx"
 
 # Filter by expression and keep empty/None margin rows
-python "C:\Users\q1894\.gemini\config\skills\wps-excel-toolkit\scripts\cli.py" filter `
+python scripts/cli.py filter `
     --file "path/to/table.xlsx" `
     --expr "毛利率 >= 15%" `
     --keep-empty `

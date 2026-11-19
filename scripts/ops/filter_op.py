@@ -1,5 +1,6 @@
 import os
 import re
+import html
 import zipfile
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional, Any, Union, Tuple
@@ -10,8 +11,36 @@ from engine import (
     is_file_locked,
     XmlStreamPatcher,
     col_to_num,
-    num_to_col
+    num_to_col,
+    is_summary_row
 )
+
+
+def extract_row_text_sample(row_xml: str, shared_strings: List[str], max_cells: int = 5) -> List[str]:
+    """提取行内前若干单元格的文本值，用于智能识别汇总/小计或说明行。"""
+    texts: List[str] = []
+    for c_match in re.finditer(r'<c\b([^/>]*)(?:/>|>(.*?)</c>)', row_xml, re.DOTALL):
+        c_attrs = c_match.group(1)
+        c_inner = c_match.group(2) or ""
+        v_match = re.search(r'<v>(.*?)</v>', c_inner)
+        t_match = re.search(r'<t[^>]*>(.*?)</t>', c_inner)
+        
+        cell_val = ""
+        if 't="s"' in c_attrs:
+            if v_match and v_match.group(1).isdigit():
+                s_idx = int(v_match.group(1))
+                if 0 <= s_idx < len(shared_strings):
+                    cell_val = shared_strings[s_idx]
+        elif t_match:
+            cell_val = t_match.group(1)
+        elif v_match:
+            cell_val = v_match.group(1)
+        
+        if cell_val.strip():
+            texts.append(html.unescape(cell_val).strip())
+            if len(texts) >= max_cells:
+                break
+    return texts
 
 
 def parse_shared_strings(zip_ref: zipfile.ZipFile) -> List[str]:
@@ -56,6 +85,7 @@ def run_filter(
     val: Optional[Union[str, float, int]] = None,
     expr: Optional[str] = None,
     keep_empty: bool = False,
+    preserve_summary: bool = True,
     sheet: Optional[str] = None,
     output_path: Optional[str] = None,
     no_backup: bool = False
@@ -158,7 +188,7 @@ def run_filter(
             elif v_match:
                 h_text = v_match.group(1)
         
-        clean_name = h_text.replace('\n', '').strip()
+        clean_name = html.unescape(h_text).replace('\n', '').strip()
         col_letter_map[clean_name] = c_letter
         letter_to_header[c_letter] = clean_name
 
@@ -185,6 +215,7 @@ def run_filter(
 
     # Step 2: Stream scan all rows and evaluate condition
     kept_rows: List[Tuple[int, str]] = []
+    summary_rows: List[Tuple[int, str]] = []
     dropped_count = 0
     total_data_rows = 0
 
@@ -199,6 +230,15 @@ def run_filter(
             continue
         total_data_rows += 1
         row_xml = match.group(0)
+
+        # 智能识别并保护汇总/小计/说明行（避免汇总行因不满足明细条件被误杀或导致重复计算）
+        if preserve_summary:
+            row_texts = extract_row_text_sample(row_xml, shared_strings)
+            if is_summary_row(row_texts):
+                desc = ' '.join(row_texts[:2])
+                print(f"[保护] 识别到第 {old_r} 行为汇总/小计行 ('{desc}')，自动保留置于表尾")
+                summary_rows.append((old_r, row_xml))
+                continue
 
         # Extract cell value
         cell_match = cell_target_pattern.search(row_xml)
@@ -224,6 +264,9 @@ def run_filter(
                     cell_val = float(raw_v)
                 except ValueError:
                     cell_val = raw_v
+
+            if isinstance(cell_val, str):
+                cell_val = html.unescape(cell_val)
 
         # Evaluate condition
         matched = False
@@ -278,14 +321,15 @@ def run_filter(
         else:
             dropped_count += 1
 
-    print(f"[统计] 总数据行: {total_data_rows} 行 | 满足条件保留: {len(kept_rows)} 行 | 过滤剔除: {dropped_count} 行")
+    all_final_rows = kept_rows + summary_rows
+    print(f"[统计] 总扫描数据行: {total_data_rows} 行 | 满足条件保留: {len(kept_rows)} 行 | 保护汇总行: {len(summary_rows)} 行 | 过滤剔除: {dropped_count} 行")
 
     # Step 3: Renumber rows and cell coordinates
     old_to_new: Dict[int, int] = {}
     new_rows_xml_list = [header_row_xml]
     cell_r_pattern = re.compile(r'(\br=")([A-Z]+)(\d+)(")')
 
-    for idx, (old_r, row_xml) in enumerate(kept_rows, start=2):
+    for idx, (old_r, row_xml) in enumerate(all_final_rows, start=2):
         new_r = idx
         old_to_new[old_r] = new_r
         

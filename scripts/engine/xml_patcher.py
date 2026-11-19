@@ -56,7 +56,8 @@ class XmlStreamPatcher:
                 rid = s.attrib.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
                 target = rel_map.get(rid)
                 if target:
-                    full_target = target if target.startswith('xl/') else f"xl/{target}"
+                    clean_target = target.lstrip('/')
+                    full_target = clean_target if clean_target.startswith('xl/') else f"xl/{clean_target}"
                     sheet_xml_map[name] = full_target
         return sheet_xml_map
 
