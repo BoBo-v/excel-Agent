@@ -17,6 +17,7 @@ dist/
 *.csv
 _已同步.xlsx
 _backup_*.xlsx
+scratch/
 
 # 编辑器与系统文件
 .idea/
