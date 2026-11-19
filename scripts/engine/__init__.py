@@ -8,3 +8,6 @@ from .xml_patcher import XmlStreamPatcher
 from .summary_detector import is_summary_text, is_summary_row, is_footnote_text
 from .layout_utils import get_string_display_width, calculate_auto_column_widths
 from .security import is_dangerous_formula, sanitize_plain_text, detect_prompt_injection
+from .header_parser import flatten_multi_level_headers, detect_header_depth
+from .data_cleaner import clean_numeric_value, normalize_date_value, split_text_column
+from .formula_builder import format_range_address, build_xlookup, build_index_match, build_sumifs, build_iferror

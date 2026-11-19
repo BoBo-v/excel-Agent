@@ -14,6 +14,9 @@ from engine.sniffer import detect_excel_flavor
 from engine.summary_detector import is_summary_text, is_summary_row, is_footnote_text
 from engine.layout_utils import get_string_display_width, calculate_auto_column_widths
 from engine.security import is_dangerous_formula, sanitize_plain_text, detect_prompt_injection
+from engine.header_parser import flatten_multi_level_headers, detect_header_depth
+from engine.data_cleaner import clean_numeric_value, normalize_date_value, split_text_column
+from engine.formula_builder import format_range_address, build_xlookup, build_index_match, build_sumifs, build_iferror
 from ops.filter_op import run_filter
 
 
@@ -156,6 +159,73 @@ class TestExcelToolkit(unittest.TestCase):
             # 断言：合计行被当做空值明细剔除，仅剩 2 个明细行
             self.assertEqual(len(rows2), 3) # 表头 + 2个明细
             self.assertNotEqual(rows2[-1][0], "合计")
+
+    def test_header_parser(self):
+        # 1. 双层合并表头扁平化
+        multi_headers = [
+            ["基本信息", None, "一季度销售", None],
+            ["商品编码", "商品名称", "1月", "2月"]
+        ]
+        flattened = flatten_multi_level_headers(multi_headers)
+        self.assertEqual(flattened, ["基本信息_商品编码", "基本信息_商品名称", "一季度销售_1月", "一季度销售_2月"])
+
+        # 2. 表头层数启发式探测
+        sample_rows_2layer = [
+            ["基本信息", "", "销售额", ""],
+            ["编码", "名称", "含税", "未税"],
+            ["P001", "商品A", 100, 88],
+            ["P002", "商品B", 200, 176]
+        ]
+        self.assertEqual(detect_header_depth(sample_rows_2layer), 2)
+
+        sample_rows_1layer = [
+            ["编码", "名称", "售价"],
+            ["P001", "商品A", 100],
+            ["P002", "商品B", 200]
+        ]
+        self.assertEqual(detect_header_depth(sample_rows_1layer), 1)
+
+    def test_data_cleaner(self):
+        # 1. 脏数值清洗
+        self.assertEqual(clean_numeric_value("¥ 1,234,567.80 元"), 1234567.8)
+        self.assertEqual(clean_numeric_value("(150.50)"), -150.5)
+        self.assertEqual(clean_numeric_value("18.5%"), 0.185)
+        self.assertEqual(clean_numeric_value("$99.00"), 99.0)
+        self.assertIsNone(clean_numeric_value("—"))
+        self.assertIsNone(clean_numeric_value("N/A"))
+        self.assertIsNone(clean_numeric_value("无"))
+
+        # 2. 混杂日期规范化 (统一为 YYYY-MM-DD)
+        self.assertEqual(normalize_date_value("2026年11月19日"), "2026-11-19")
+        self.assertEqual(normalize_date_value("2026/5/1"), "2026-05-01")
+        self.assertEqual(normalize_date_value("2026.12.31"), "2026-12-31")
+        self.assertEqual(normalize_date_value("2026-08-01 12:30:00"), "2026-08-01")
+        # Excel 日期序列号 45615 对应 2024-11-19
+        self.assertEqual(normalize_date_value(45615), "2024-11-19")
+        self.assertIsNone(normalize_date_value("—"))
+
+        # 3. 文本分列
+        parts = split_text_column("半亩花田, 烟酰胺身体乳, 250g")
+        self.assertEqual(parts, ["半亩花田", "烟酰胺身体乳", "250g"])
+        parts_cn = split_text_column("美妆；个护；身体乳", delimiter=";")
+        self.assertEqual(parts_cn, ["美妆", "个护", "身体乳"])
+
+    def test_formula_builder(self):
+        # 1. XLOOKUP 构建
+        f_xlookup = build_xlookup("A2", "'底表'!$B$2:$B$100", "'底表'!$C$2:$C$100")
+        self.assertEqual(f_xlookup, "=XLOOKUP(A2, '底表'!$B$2:$B$100, '底表'!$C$2:$C$100, \"\")")
+
+        # 2. INDEX + MATCH 构建
+        f_index_match = build_index_match("A2", "$B$2:$B$100", "$C$2:$C$100")
+        self.assertEqual(f_index_match, "=INDEX($C$2:$C$100, MATCH(A2, $B$2:$B$100, 0))")
+
+        # 3. SUMIFS 多条件构建
+        f_sumifs = build_sumifs("$D$2:$D$100", [("$A$2:$A$100", '"华东"'), ("$B$2:$B$100", '">=100"')])
+        self.assertEqual(f_sumifs, '=SUMIFS($D$2:$D$100, $A$2:$A$100, "华东", $B$2:$B$100, ">=100")')
+
+        # 4. IFERROR 包裹
+        f_safe = build_iferror("=VLOOKUP(A2, $B$2:$C$100, 2, FALSE)")
+        self.assertEqual(f_safe, '=IFERROR(VLOOKUP(A2, $B$2:$C$100, 2, FALSE), "")')
 
 
 if __name__ == '__main__':
